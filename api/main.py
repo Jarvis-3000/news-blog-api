@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, Query
-from typing import List
+from typing import List, Dict, Optional
 import json
 import os
+import random
 
 app = FastAPI()
 
@@ -15,24 +16,55 @@ def load_blogs_data():
 
 # Load blogs data at startup
 blogs_data = load_blogs_data()
-blogs_length = len(blogs_data)
+total_items = len(blogs_data)
 
-@app.get("/blogs", response_model=List[dict])
-async def get_blogs(page: int = Query(1, ge=1), limit: int = Query(blogs_length, ge=1)):
+@app.get("/blogs", response_model=Dict)
+async def get_blogs(page: int = Query(1, ge=1), limit: int = Query(total_items, ge=1)):
     """
-    Returns a paginated list of blogs based on page and limit query parameters.
-    
+    Returns a paginated list of blogs along with pagination metadata.
+
     - `page`: The page number.
     - `limit`: The number of blogs to return per page.
     """
+    
+    total_pages = (total_items + limit - 1) // limit  # Calculate the total number of pages
+    print(total_items, " " ,total_pages)
+
+    # Ensure the requested page number is within valid range
+    if page > total_pages or page < 1:
+        raise HTTPException(status_code=402, detail="Invalid request")
+
+    # Pagination logic
     start = (page - 1) * limit
     end = start + limit
     paginated_blogs = blogs_data[start:end]
 
-    if not paginated_blogs:
-        raise HTTPException(status_code=404, detail="No blogs found for this page.")
+    next_page = page + 1 if page < total_pages else None
+    prev_page = page - 1 if page > 1 else None
 
-    return paginated_blogs
+    # Return paginated results and pagination details
+    return {
+        "page": page,
+        "pages": total_pages,
+        "next": next_page,
+        "prev": prev_page,
+        "count": total_items,
+        "blogs": paginated_blogs
+    }
+
+@app.get("/blogs/top-ten", response_model=Dict)
+async def get_random_news():
+    # Select 10 random news items
+    random_news = random.sample(blogs_data, 10)
+    
+    return {
+        "page": 1,
+        "pages": 1,
+        "next": None,
+        "prev": None,
+        "count": len(random_news),
+        "blogs": random_news
+        }
 
 
 @app.get("/blogs/{id}", response_model=dict)
@@ -43,7 +75,7 @@ async def get_blog_by_id(id: int):
     - `id`: The blog ID.
     """
     for blog in blogs_data:
-        if blog['id'] == id:
+        if blog.get('id') == id:
             return blog
 
     raise HTTPException(status_code=404, detail="Blog not found")
